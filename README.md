@@ -42,7 +42,11 @@ SomnoStop/
 ├── servidor/
 │   ├── procesador_ia.py      # Suscriptor MQTT + lógica de decisión (E2)
 │   ├── ia_processor.py       # Pipeline de IA con MediaPipe FaceMesh (E3)
-│   └── prueba_estatica.py    # Validación estática del modelo sin MQTT (E3)
+│   ├── prueba_estatica.py    # Validación estática del modelo sin MQTT (E3)
+│   └── firebase_logger.py    # Registro de eventos en Firebase (E4)
+├── interfaz/
+│   └── index.html            # Dashboard web con control remoto (E4)
+├── .gitignore                # Excluye firebase_cred.json del repositorio
 └── README.md
 ```
 
@@ -145,7 +149,7 @@ mosquitto_sub -t "somnostop/#" -v
 
 **Problema:** La latencia entre la captura del frame en la ESP32-CAM y el procesamiento en el servidor superaba los 4 segundos, haciendo que el modelo analizara imágenes desactualizadas del conductor y que las alertas llegaran con retraso crítico.
 
-**Solución:** Se redujo la resolución de SVGA (800×600) a QVGA (320×240) y se aumentó la compresión JPEG de `q=5` a `q=10`, reduciendo el tamaño del frame de ~45 KB a ~12 KB y la latencia a menos de 500 ms.
+**Solución:** Se redujo la resolución de SVGA a QVGA y se aumentó la compresión JPEG , reduciendo el tamaño del frame y la latencia a menos de 500 ms.
 
 **Conclusión:** La arquitectura correcta para IoT queda demostrada: el microcontrolador actúa como sensor/actuador y el servidor como cerebro. La ESP32 no puede correr MediaPipe debido a sus limitaciones de RAM (~520 KB) y ausencia de FPU eficiente.
 
@@ -163,8 +167,86 @@ mosquitto_sub -t "somnostop/#" -v
 
 ### Alan Fabricio Gómez Juárez — E3
 
-**Problema:** Los valores de EAR y MAR llegaban como cadenas dentro del JSON (`"0.23"` en lugar de `0.23`), causando que las comparaciones con los umbrales fallaran silenciosamente sin activar alertas.
+**Problema:** Los valores de EAR y MAR llegaban como cadenas dentro del JSON, causando que las comparaciones con los umbrales fallaran silenciosamente sin activar alertas.
 
 **Solución:** Se añadió conversión explícita de tipos con `float()` al extraer valores del JSON en la ESP32, y se validó que el servidor Python siempre publique valores numéricos nativos mediante `round()` antes de serializar.
 
 **Conclusión:** La comunicación JSON entre MicroPython y CPython requiere validación estricta de tipos en ambos extremos. Probar el modelo con imágenes estáticas antes de conectar la ESP32 aceleró enormemente la detección de errores sin depender del hardware físico.
+
+---
+
+## Firebase Realtime Database (E4)
+
+### Tipos de eventos registrados
+
+| Tipo | Nodo en Firebase | Campos |
+|:---|:---|:---|
+| Telemetría | `/eventos/telemetria/` | distancia, boton, inclinacion, timestamp |
+| Alerta IA | `/eventos/alertas_ia/` | estado, ear, mar, timestamp |
+| Actuador | `/eventos/actuadores/` | actuador, valor, origen, timestamp |
+| Estado actual | `/estado_actual/` | online, estado_conductor, sensores, timestamp |
+
+Cada registro incluye timestamp en formato `YYYY-MM-DD HH:MM:SS`. Las imágenes de la ESP32-CAM **no se almacenan** — solo las métricas procesadas (EAR, MAR, estado), garantizando la privacidad del conductor.
+
+### Dashboard Web (interfaz/index.html)
+
+| Funcionalidad | Descripción |
+|:---|:---|
+| Estado del conductor | NORMAL / SOMNOLIENTO / PELIGRO con color y animación |
+| Métricas EAR y MAR | Valores en tiempo real con barras de progreso |
+| Sensores | Distancia, botón hombre muerto e inclinación |
+| Historial de alertas | Últimas 5 alertas con severidad y hora |
+| Control remoto | Toggle para LEDs, Solenoide y Buzzer desde la interfaz |
+| Indicador Online | Estado de conexión del sistema en tiempo real |
+
+---
+
+## Instalación de Dependencias (E4)
+
+```bash
+pip install firebase-admin
+```
+
+Colocar el archivo `firebase_cred.json` (credenciales de Firebase) en la raíz del proyecto. Este archivo está en `.gitignore` y **no se sube al repositorio**.
+
+---
+
+## Ejecución completa del sistema
+
+```bash
+# Terminal 1 — Broker MQTT
+mosquitto -v
+
+# Terminal 2 — Servidor de IA
+python servidor/ia_processor.py
+
+# Terminal 3 — Firebase Logger
+python servidor/firebase_logger.py
+
+# Terminal 4 — Dashboard web
+cd interfaz
+python -m http.server 8080
+# Abrir en Chrome: http://localhost:8080
+```
+
+---
+
+## Análisis Individual — E4
+
+### Montserrat Cruz Valadez — E4
+
+**Problema:** Al abrir el `index.html` directamente desde el explorador de archivos (protocolo `file://`), Firebase bloqueaba la conexión por restricciones de CORS, mostrando "Conectando..." aunque las reglas de la base de datos eran correctas.
+
+**Solución:** Se identificó que Firebase requiere que el archivo se sirva desde un servidor HTTP. Se usó el servidor integrado de Python para servir la interfaz desde `localhost`, resolviendo el problema sin instalar software adicional.
+
+**Conclusión:** Firebase Realtime Database permite crear interfaces reactivas con muy poco código, ya que el SDK maneja automáticamente la sincronización. Sin embargo, es fundamental configurar correctamente el entorno de desarrollo y las reglas de seguridad desde el inicio.
+
+---
+
+### Alan Fabricio Gómez Juárez — E4
+
+**Problema:** Al intentar subir `firebase_cred.json` a GitHub, el push fue bloqueado automáticamente por el sistema Secret Scanning de GitHub, ya que el archivo contiene credenciales reales de Google Cloud Service Account.
+
+**Solución:** Se eliminó el archivo del historial de Git con `git rm --cached firebase_cred.json` y se creó `.gitignore` para ignorarlo permanentemente. El archivo permanece local para que Python pueda usarlo, pero no se expone en el repositorio público.
+
+**Conclusión:** La gestión de credenciales es crítica en proyectos IoT con servicios en la nube. Nunca deben subirse archivos de credenciales a repositorios públicos. El uso de `.gitignore` es la práctica correcta para mantener seguridad sin afectar la funcionalidad.
