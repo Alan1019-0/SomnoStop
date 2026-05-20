@@ -1,0 +1,578 @@
+<!--
+OBJETIVO: Gestión de Firebase y Dashboard de usuario para monitoreo
+          y control remoto del sistema SomnoStop en tiempo real.
+          Muestra estado del conductor, sensores, historial de alertas
+          y permite controlar el solenoide desde la interfaz.
+INTEGRANTES: Cruz Valadez Montserrat, Gómez Juárez Alan Fabricio
+PROYECTO: SomnoStop - Sistema Inteligente de Detección de Somnolencia
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SomnoStop — Dashboard</title>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --azul-oscuro: #1a1a2e;
+      --azul-medio:  #16213e;
+      --acento:      #0f3460;
+      --verde:       #00b894;
+      --amarillo:    #fdcb6e;
+      --rojo:        #d63031;
+      --gris-claro:  #f5f6fa;
+      --texto:       #2d3436;
+      --texto-claro: #636e72;
+      --card-bg:     #ffffff;
+      --sombra:      0 4px 20px rgba(0,0,0,0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--gris-claro);
+      color: var(--texto);
+      min-height: 100vh;
+    }
+
+    /* ── Barra superior ── */
+    header {
+      background: var(--azul-oscuro);
+      color: white;
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icono {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: var(--acento);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .logo h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: 0.5px; }
+    .logo span { font-size: 0.75rem; color: #a0aec0; display: block; }
+
+    .estado-conexion {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.85rem; color: #a0aec0;
+    }
+    .punto-estado {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #636e72;
+      transition: background 0.3s;
+    }
+    .punto-estado.online  { background: var(--verde); box-shadow: 0 0 6px var(--verde); }
+    .punto-estado.offline { background: var(--rojo); }
+
+    /* ── Layout principal ── */
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem;
+      display: grid;
+      gap: 1.2rem;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card-bg);
+      border-radius: 14px;
+      padding: 1.4rem 1.6rem;
+      box-shadow: var(--sombra);
+    }
+    .card-titulo {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--texto-claro);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Estado conductor (tarjeta grande) ── */
+    .estado-conductor {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    .estado-badge {
+      padding: 0.5rem 1.4rem;
+      border-radius: 50px;
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      transition: all 0.4s;
+      min-width: 180px;
+      text-align: center;
+    }
+    .estado-badge.NORMAL      { background: #00b89420; color: #00b894; border: 2px solid #00b894; }
+    .estado-badge.SOMNOLIENTO { background: #fdcb6e20; color: #e17055; border: 2px solid #fdcb6e; }
+    .estado-badge.PELIGRO     { background: #d6303120; color: #d63031; border: 2px solid #d63031;
+                                animation: pulso 1s infinite; }
+    .estado-badge.SIN_ROSTRO  { background: #63676220; color: #636e72; border: 2px solid #636e72; }
+    .estado-badge.desconectado{ background: #63676220; color: #636e72; border: 2px dashed #636e72; }
+
+    @keyframes pulso {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(214,48,49,0.4); }
+      50%       { box-shadow: 0 0 0 10px rgba(214,48,49,0); }
+    }
+
+    .metricas-ia {
+      display: flex;
+      gap: 2rem;
+    }
+    .metrica {
+      text-align: center;
+    }
+    .metrica-valor {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--azul-oscuro);
+    }
+    .metrica-label {
+      font-size: 0.7rem;
+      color: var(--texto-claro);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .metrica-barra {
+      width: 80px;
+      height: 5px;
+      background: #eee;
+      border-radius: 3px;
+      margin: 4px auto 0;
+      overflow: hidden;
+    }
+    .metrica-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s, background 0.5s;
+    }
+
+    /* ── Grid sensores ── */
+    .grid-sensores {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .sensor-item {
+      background: var(--gris-claro);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .sensor-icono { font-size: 1.8rem; margin-bottom: 6px; }
+    .sensor-valor {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--azul-oscuro);
+    }
+    .sensor-unidad { font-size: 0.75rem; color: var(--texto-claro); }
+    .sensor-nombre { font-size: 0.75rem; color: var(--texto-claro); margin-top: 4px; }
+
+    /* ── Control remoto ── */
+    .control-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .control-item {
+      background: var(--gris-claro);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .control-nombre {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--texto);
+    }
+    .control-desc {
+      font-size: 0.75rem;
+      color: var(--texto-claro);
+    }
+
+    /* Toggle switch */
+    .toggle { position: relative; display: inline-block; width: 52px; height: 28px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #ccc; border-radius: 28px;
+      transition: 0.3s;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 20px; width: 20px;
+      left: 4px; bottom: 4px;
+      background: white; border-radius: 50%;
+      transition: 0.3s;
+    }
+    input:checked + .slider { background: var(--verde); }
+    input:checked + .slider:before { transform: translateX(24px); }
+
+    /* Botón alarma */
+    .btn-alarma {
+      padding: 0.4rem 1rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-alarma.activar {
+      background: var(--rojo);
+      color: white;
+    }
+    .btn-alarma.activar:hover { background: #c0392b; }
+    .btn-alarma.desactivar {
+      background: #eee;
+      color: var(--texto-claro);
+    }
+
+    /* ── Historial alertas ── */
+    .lista-alertas { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .alerta-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0.7rem 1rem;
+      border-radius: 8px;
+      background: var(--gris-claro);
+      font-size: 0.88rem;
+      transition: all 0.3s;
+    }
+    .alerta-punto {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .alerta-punto.PELIGRO     { background: var(--rojo); }
+    .alerta-punto.SOMNOLIENTO { background: var(--amarillo); }
+    .alerta-punto.NORMAL      { background: var(--verde); }
+    .alerta-texto { flex: 1; color: var(--texto); }
+    .alerta-tiempo { color: var(--texto-claro); font-size: 0.78rem; flex-shrink: 0; }
+
+    .sin-alertas {
+      text-align: center;
+      color: var(--texto-claro);
+      font-size: 0.88rem;
+      padding: 1.5rem;
+    }
+
+    /* ── Layout de 2 columnas para fila inferior ── */
+    .fila-inferior {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.2rem;
+    }
+
+    /* ── Última actualización ── */
+    .ultima-actualizacion {
+      font-size: 0.75rem;
+      color: var(--texto-claro);
+      text-align: right;
+      margin-top: 0.5rem;
+    }
+
+    @media (max-width: 680px) {
+      .grid-sensores { grid-template-columns: 1fr 1fr; }
+      .control-grid  { grid-template-columns: 1fr; }
+      .fila-inferior { grid-template-columns: 1fr; }
+      .metricas-ia   { gap: 1rem; }
+      .estado-conductor { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">
+    <div class="logo-icono">😴</div>
+    <div>
+      <h1>SomnoStop</h1>
+      <span>Sistema de Detección de Somnolencia</span>
+    </div>
+  </div>
+  <div class="estado-conexion">
+    <div class="punto-estado" id="puntoConexion"></div>
+    <span id="textoConexion">Conectando...</span>
+  </div>
+</header>
+
+<!-- ── CONTENIDO PRINCIPAL ── -->
+<main>
+
+  <!-- Estado conductor -->
+  <div class="card">
+    <div class="card-titulo">🧠 Estado del Conductor (IA)</div>
+    <div class="estado-conductor">
+      <div class="estado-badge desconectado" id="estadoBadge">---</div>
+      <div class="metricas-ia">
+        <div class="metrica">
+          <div class="metrica-valor" id="valorEAR">--</div>
+          <div class="metrica-label">EAR</div>
+          <div class="metrica-barra">
+            <div class="metrica-fill" id="barraEAR" style="width:0%; background: var(--verde);"></div>
+          </div>
+          <div class="sensor-unidad">umbral &lt; 0.25</div>
+        </div>
+        <div class="metrica">
+          <div class="metrica-valor" id="valorMAR">--</div>
+          <div class="metrica-label">MAR</div>
+          <div class="metrica-barra">
+            <div class="metrica-fill" id="barraMAR" style="width:0%; background: var(--verde);"></div>
+          </div>
+          <div class="sensor-unidad">umbral &gt; 0.55</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sensores -->
+  <div class="card">
+    <div class="card-titulo">📡 Última Lectura de Sensores</div>
+    <div class="grid-sensores">
+      <div class="sensor-item">
+        <div class="sensor-icono">📏</div>
+        <div class="sensor-valor" id="valDistancia">--</div>
+        <div class="sensor-unidad">cm</div>
+        <div class="sensor-nombre">Distancia (HC-SR04)</div>
+      </div>
+      <div class="sensor-item">
+        <div class="sensor-icono">🔘</div>
+        <div class="sensor-valor" id="valBoton">--</div>
+        <div class="sensor-unidad"></div>
+        <div class="sensor-nombre">Botón Hombre Muerto</div>
+      </div>
+      <div class="sensor-item">
+        <div class="sensor-icono">📐</div>
+        <div class="sensor-valor" id="valInclinacion">--</div>
+        <div class="sensor-unidad">°</div>
+        <div class="sensor-nombre">Inclinación (MPU6050)</div>
+      </div>
+    </div>
+    <div class="ultima-actualizacion" id="ultimaAct">Sin datos aún</div>
+  </div>
+
+  <!-- Fila inferior: control + alertas -->
+  <div class="fila-inferior">
+
+    <!-- Control remoto -->
+    <div class="card">
+      <div class="card-titulo">🎛️ Control Remoto de Actuadores</div>
+      <div class="control-grid">
+        <div class="control-item">
+          <div>
+            <div class="control-nombre">💡 LEDs</div>
+            <div class="control-desc">Indicadores de estado</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggleLED" onchange="controlarActuador('estado', this.checked ? 'PELIGRO' : 'OK')">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="control-item">
+          <div>
+            <div class="control-nombre">🔧 Solenoide</div>
+            <div class="control-desc">Alerta física asiento</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggleSolenoide" onchange="controlarActuador('solenoide', this.checked ? 'ON' : 'OFF')">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="control-item" style="grid-column: span 2;">
+          <div>
+            <div class="control-nombre">🔔 Alarma Sonora (Buzzer)</div>
+            <div class="control-desc">Activa alerta de 2000 Hz</div>
+          </div>
+          <button class="btn-alarma activar" id="btnAlarma"
+                  onclick="toggleAlarma()">Activar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Historial de alertas -->
+    <div class="card">
+      <div class="card-titulo">🚨 Últimas 5 Alertas</div>
+      <ul class="lista-alertas" id="listaAlertas">
+        <li class="sin-alertas">Esperando datos de Firebase...</li>
+      </ul>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// OBJETIVO: Dashboard SomnoStop — conexión a Firebase Realtime Database
+// INTEGRANTES: Cruz Valadez Montserrat, Gómez Juárez Alan Fabricio
+// PROYECTO: SomnoStop — Sistema Inteligente de Detección de Somnolencia
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Configuración Firebase ────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "AIzaSyAftn_IJ6uC9iwSKF6NOUgfhVkNSmOxOWI",
+  authDomain:        "sistemas-programables-c2d9e.firebaseapp.com",
+  databaseURL:       "https://sistemas-programables-c2d9e-default-rtdb.firebaseio.com",
+  projectId:         "sistemas-programables-c2d9e",
+  storageBucket:     "sistemas-programables-c2d9e.firebasestorage.app",
+  messagingSenderId: "403983993130",
+  appId:             "1:403983993130:web:2659d4a22c5bb15fea3653"
+};
+
+firebase.initializeApp(firebaseConfig);
+const baseDatos = firebase.database();
+
+// ── Variables de estado ───────────────────────────────────────────────────────
+let alarmaActiva = false;
+const historialAlertas = [];
+
+// ── Funciones de actualización de UI ─────────────────────────────────────────
+
+function actualizarEstadoConductor(datos) {
+  const badge  = document.getElementById("estadoBadge");
+  const estado = datos.estado_conductor || "SIN_ROSTRO";
+  const ear    = datos.ear  || 0;
+  const mar    = datos.mar  || 0;
+
+  badge.textContent = estado;
+  badge.className   = "estado-badge " + estado;
+
+  document.getElementById("valorEAR").textContent = ear.toFixed(3);
+  document.getElementById("valorMAR").textContent = mar.toFixed(3);
+
+  // Barras de progreso
+  const pctEAR = Math.min((ear / 0.4) * 100, 100);
+  const pctMAR = Math.min((mar / 1.0) * 100, 100);
+  const barraEAR = document.getElementById("barraEAR");
+  const barraMAR = document.getElementById("barraMAR");
+
+  barraEAR.style.width      = pctEAR + "%";
+  barraEAR.style.background = ear < 0.25 ? "var(--rojo)" : "var(--verde)";
+  barraMAR.style.width      = pctMAR + "%";
+  barraMAR.style.background = mar > 0.55 ? "var(--rojo)" : "var(--verde)";
+}
+
+function actualizarSensores(datos) {
+  const dist = datos.distancia  !== undefined ? datos.distancia  : "--";
+  const bot  = datos.boton      !== undefined ? (datos.boton ? "✅ OK" : "⚠️ Suelto") : "--";
+  const inc  = datos.inclinacion !== undefined ? datos.inclinacion : "--";
+
+  document.getElementById("valDistancia").textContent  = dist;
+  document.getElementById("valBoton").textContent      = bot;
+  document.getElementById("valInclinacion").textContent = inc;
+  document.getElementById("ultimaAct").textContent =
+    "Última actualización: " + (datos.ultima_actualizacion || "---");
+}
+
+function actualizarConexion(online) {
+  const punto = document.getElementById("puntoConexion");
+  const texto = document.getElementById("textoConexion");
+  if (online) {
+    punto.className = "punto-estado online";
+    texto.textContent = "Sistema Online";
+  } else {
+    punto.className = "punto-estado offline";
+    texto.textContent = "Sistema Offline";
+  }
+}
+
+function agregarAlerta(datos, clave) {
+  // Evitar duplicados
+  if (historialAlertas.find(a => a.clave === clave)) return;
+
+  historialAlertas.unshift({ clave, ...datos });
+  if (historialAlertas.length > 5) historialAlertas.pop();
+
+  const lista = document.getElementById("listaAlertas");
+  lista.innerHTML = "";
+
+  if (historialAlertas.length === 0) {
+    lista.innerHTML = '<li class="sin-alertas">Sin alertas registradas</li>';
+    return;
+  }
+
+  historialAlertas.forEach(alerta => {
+    const estado = alerta.estado || alerta.actuador || "evento";
+    const tiempo = alerta.timestamp || "";
+    const li = document.createElement("li");
+    li.className = "alerta-item";
+    li.innerHTML = `
+      <div class="alerta-punto ${alerta.estado || 'NORMAL'}"></div>
+      <div class="alerta-texto">
+        <b>${estado}</b>
+        ${alerta.ear ? ` — EAR: ${alerta.ear.toFixed(3)}, MAR: ${alerta.mar.toFixed(3)}` : ""}
+        ${alerta.actuador ? ` — ${alerta.actuador}: ${alerta.valor}` : ""}
+      </div>
+      <div class="alerta-tiempo">${tiempo.split(" ")[1] || tiempo}</div>
+    `;
+    lista.appendChild(li);
+  });
+}
+
+// ── Control remoto → Firebase → Python → MQTT → ESP32 ────────────────────────
+
+function controlarActuador(actuador, valor) {
+  baseDatos.ref("/control_remoto").set({
+    actuador: actuador,
+    valor:    valor,
+    origen:   "dashboard",
+    timestamp: new Date().toLocaleString("es-MX")
+  });
+  console.log(`[CONTROL] ${actuador} = ${valor}`);
+}
+
+function toggleAlarma() {
+  alarmaActiva = !alarmaActiva;
+  const btn = document.getElementById("btnAlarma");
+  if (alarmaActiva) {
+    controlarActuador("alarma", "2000");
+    btn.textContent = "Desactivar";
+    btn.className   = "btn-alarma desactivar";
+  } else {
+    controlarActuador("alarma", "0");
+    btn.textContent = "Activar";
+    btn.className   = "btn-alarma activar";
+  }
+}
+
+// ── Escuchas en tiempo real de Firebase ──────────────────────────────────────
+
+// Estado actual del sistema
+baseDatos.ref("/estado_actual").on("value", snapshot => {
+  const datos = snapshot.val();
+  if (!datos) return;
+  actualizarConexion(datos.online || false);
+  actualizarEstadoConductor(datos);
+  actualizarSensores(datos);
+});
+
+// Últimas 5 alertas de IA
+baseDatos.ref("/eventos/alertas_ia").limitToLast(5).on("child_added", snapshot => {
+  agregarAlerta(snapshot.val(), snapshot.key);
+});
+
+// Últimas alertas de actuadores
+baseDatos.ref("/eventos/actuadores").limitToLast(3).on("child_added", snapshot => {
+  agregarAlerta(snapshot.val(), snapshot.key);
+});
+</script>
+</body>
+</html>
