@@ -46,6 +46,7 @@ SomnoStop/
 │   └── firebase_logger.py    # Registro de eventos en Firebase (E4)
 ├── interfaz/
 │   └── index.html            # Dashboard web con control remoto (E4)
+├── requirements.txt          # Dependencias del proyecto
 ├── .gitignore                # Excluye firebase_cred.json del repositorio
 └── README.md
 ```
@@ -106,7 +107,7 @@ Si cualquiera de las dos condiciones se mantiene durante **3 frames consecutivos
 ## Instalación de Dependencias
 
 ```bash
-pip install mediapipe opencv-python paho-mqtt numpy
+pip install -r requirements.txt
 ```
 
 ---
@@ -122,12 +123,20 @@ Usa la webcam de la PC para validar que MediaPipe detecta correctamente el rostr
 ### 2. Pipeline completo con MQTT
 ```bash
 # Terminal 1 — Broker
-mosquitto -v
+mosquitto -v -c mosquitto.conf
 
 # Terminal 2 — Servidor de IA
 python servidor/ia_processor.py
 
-# Terminal 3 — Monitor (opcional)
+# Terminal 3 — Firebase Logger
+python servidor/firebase_logger.py
+
+# Terminal 4 — Dashboard web
+cd interfaz
+python -m http.server 8080
+# Abrir en Chrome: http://localhost:8080
+
+# Terminal 5 — Monitor (opcional)
 mosquitto_sub -t "somnostop/#" -v
 ```
 
@@ -149,7 +158,7 @@ mosquitto_sub -t "somnostop/#" -v
 
 **Problema:** La latencia entre la captura del frame en la ESP32-CAM y el procesamiento en el servidor superaba los 4 segundos, haciendo que el modelo analizara imágenes desactualizadas del conductor y que las alertas llegaran con retraso crítico.
 
-**Solución:** Se redujo la resolución de SVGA a QVGA y se aumentó la compresión JPEG , reduciendo el tamaño del frame y la latencia a menos de 500 ms.
+**Solución:** Se redujo la resolución de SVGA a QVGA y se aumentó la compresión JPEG, reduciendo el tamaño del frame y la latencia a menos de 500 ms.
 
 **Conclusión:** La arquitectura correcta para IoT queda demostrada: el microcontrolador actúa como sensor/actuador y el servidor como cerebro. La ESP32 no puede correr MediaPipe debido a sus limitaciones de RAM (~520 KB) y ausencia de FPU eficiente.
 
@@ -211,26 +220,6 @@ Colocar el archivo `firebase_cred.json` (credenciales de Firebase) en la raíz d
 
 ---
 
-## Ejecución completa del sistema
-
-```bash
-# Terminal 1 — Broker MQTT
-mosquitto -v
-
-# Terminal 2 — Servidor de IA
-python servidor/ia_processor.py
-
-# Terminal 3 — Firebase Logger
-python servidor/firebase_logger.py
-
-# Terminal 4 — Dashboard web
-cd interfaz
-python -m http.server 8080
-# Abrir en Chrome: http://localhost:8080
-```
-
----
-
 ## Análisis Individual — E4
 
 ### Montserrat Cruz Valadez — E4
@@ -250,3 +239,47 @@ python -m http.server 8080
 **Solución:** Se eliminó el archivo del historial de Git con `git rm --cached firebase_cred.json` y se creó `.gitignore` para ignorarlo permanentemente. El archivo permanece local para que Python pueda usarlo, pero no se expone en el repositorio público.
 
 **Conclusión:** La gestión de credenciales es crítica en proyectos IoT con servicios en la nube. Nunca deben subirse archivos de credenciales a repositorios públicos. El uso de `.gitignore` es la práctica correcta para mantener seguridad sin afectar la funcionalidad.
+
+---
+
+## Análisis Individual — E5 (Prototipado Físico)
+
+### Montserrat Cruz Valadez — E5
+
+**Problema:** Durante las pruebas del prototipo físico, la IP del broker MQTT cambiaba dinámicamente cada vez que se reiniciaba la sesión WiFi de la PC, ya que el router asignaba una nueva dirección al equipo. Esto provocaba que los ESP32 no pudieran conectarse al servidor y el sistema fallara al inicio de cada sesión de pruebas.
+
+**Solución:** Se estableció un procedimiento de verificación previo a cada sesión: ejecutar `ipconfig` en la PC para confirmar la IP actual del adaptador WiFi, y actualizar los archivos `main.py`, `camara_mqtt.py` e `ia_processor.py` con la IP correcta antes de encender los dispositivos. Se documentó este proceso para garantizar la reproducibilidad de las demos.
+
+**Conclusión:** La integración de un sistema IoT en un entorno real expone vulnerabilidades que no aparecen durante el desarrollo aislado, como la asignación dinámica de IPs. Para un producto final se debería configurar una IP estática en el router o migrar a un broker MQTT en la nube (HiveMQ, AWS IoT Core) para eliminar esta dependencia. La etapa de prueba física requiere tanta preparación y verificación como la etapa de desarrollo de software.
+
+---
+
+### Alan Fabricio Gómez Juárez — E5
+
+**Problema:** Al conectar el solenoide de 12V con el MOSFET IRFZ44N en la protoboard, el solenoide no se activaba a pesar de que el GPIO27 enviaba la señal correcta. El diagnóstico reveló que el GND de la batería 12V y el GND del ESP32 (alimentado por USB a 5V) no estaban unidos en un punto común, rompiendo el circuito de retorno del MOSFET y dejando la señal de Gate sin referencia de tierra válida.
+
+**Solución:** Se unieron ambos GND en el mismo riel de la protoboard, estableciendo la referencia de voltaje común entre las dos fuentes de alimentación. Se verificó también la orientación correcta del diodo 1N4007 de protección (cátodo al +12V, ánodo al Drain del MOSFET) para prevenir daños por la corriente inversa generada cuando el solenoide se desactiva.
+
+**Conclusión:** La gestión de múltiples fuentes de alimentación en un mismo circuito es uno de los errores más frecuentes en proyectos con actuadores de potencia. El GND común es un requisito fundamental, no opcional. Un circuito correcto en software pero con un error de referencia de tierra en hardware resulta completamente inoperante. Esta experiencia refuerza la importancia de revisar el esquema eléctrico completo antes de realizar la primera prueba con componentes de potencia.
+
+---
+
+## Análisis Individual — E6 (Entrega Final)
+
+### Montserrat Cruz Valadez — E6
+
+**Problema:** Al realizar la demostración final del sistema completo, el modelo de IA presentaba falsos positivos frecuentes — clasificando al conductor como SOMNOLIENTO o PELIGRO incluso con los ojos abiertos — cuando la iluminación del entorno era baja o lateral. Esto generaba activaciones innecesarias del buzzer y el solenoide durante la demo.
+
+**Solución:** Se ajustaron los umbrales de detección (UMBRAL_EAR de 0.25 a 0.22 y FRAMES_PELIGRO de 3 a 4 frames consecutivos) para reducir la sensibilidad en condiciones de iluminación variable, manteniendo la funcionalidad de detección real sin comprometer la demostración.
+
+**Conclusión Final:** SomnoStop logró demostrar de forma exitosa que la combinación de IoT, MQTT e IA open source permite construir sistemas de seguridad vial funcionales con hardware accesible. El proyecto integró conocimientos de redes, programación embebida, visión por computadora y bases de datos en la nube en un producto cohesivo. El mayor aprendizaje fue que en sistemas IoT, la robustez de la comunicación y la correcta gestión del entorno son tan importantes como la precisión del modelo de IA.
+
+---
+
+### Alan Fabricio Gómez Juárez — E6
+
+**Problema:** Al preparar el prototipo para la entrega final, el circuito en protoboard presentaba inestabilidad en las conexiones del MPU6050 (sensor de cabeceo) y el HC-SR04 (sensor de distancia) debido al movimiento de los cables durante el transporte y montaje. Los jumpers se desconectaban fácilmente, causando errores en la lectura de sensores durante las pruebas.
+
+**Solución:** Se aseguró cada jumper crítico con cinta aislante en los puntos de conexión más propensos a desconectarse, y se reorganizó el cableado de la protoboard agrupando los cables por función (alimentación, señal, GND) para reducir el desorden y facilitar la identificación de conexiones durante la demo.
+
+**Conclusión Final:** Este proyecto demostró que el diseño de software bien estructurado (HAL, MQTT, arquitectura por capas) puede sobrevivir incluso a las limitaciones del hardware temporal en protoboard. Sin embargo, la experiencia confirmó que para un producto comercial confiable, la transición a PCB soldada es indispensable — no como requisito estético sino como necesidad de ingeniería para garantizar la integridad de las conexiones en condiciones de uso real. SomnoStop cumplió su objetivo: detectar somnolencia en tiempo real y activar alertas físicas de forma automática, cerrando el ciclo completo Sensor → IA → Actuador → Nube.
