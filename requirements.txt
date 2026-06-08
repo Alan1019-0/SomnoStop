@@ -1,0 +1,6 @@
+mediapipe==0.10.14
+opencv-python==4.13.0.92
+paho-mqtt==2.1.0
+numpy==2.4.6
+firebase-admin
+protobuf==3.20.3

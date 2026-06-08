@@ -10,10 +10,9 @@ import network
 from umqtt.simple import MQTTClient
 from dispositivos import SensorBox, ActuatorBox
 
-# CONFIGURACIÓN (Cambia esto)
-WIFI_SSID = "PON_AQUI_TU_WIFI"
-WIFI_PASS = "PON_AQUI_TU_PASSWORD"
-BROKER_MQTT = "broker.hivemq.com"
+WIFI_SSID = "INFINITUM7045_2.4"
+WIFI_PASS = "xGsuu62FVD"
+BROKER_MQTT = "192.168.1.73"
 CLIENTE_ID = "ESP32_SomnoStop_EquipoMT"
 
 sensores = SensorBox()
@@ -31,7 +30,6 @@ def conectar_wifi():
 def procesar_mensaje(topic, msg):
     tema = topic.decode()
     comando = msg.decode()
-    
     if "solenoide" in tema:
         actuadores.activar_alerta_fisica(True if comando == "ON" else False)
     elif "estado" in tema:
