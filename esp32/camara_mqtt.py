@@ -9,9 +9,9 @@ import gc
 import network
 from umqtt.simple import MQTTClient
 
-WIFI_SSID = "INFINITUM7045_2.4"
-WIFI_PASS = "xGsuu62FVD"
-BROKER_MQTT = "192.168.1.73"
+WIFI_SSID = "Alan`s iPhone"
+WIFI_PASS = "luismiguapo1"
+BROKER_MQTT = "172.20.10.4"
 CLIENTE_ID = "ESP32CAM_SomnoStop"
 
 TOPICO_FRAME     = "somnostop/camara/frame"
